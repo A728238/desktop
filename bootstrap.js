@@ -1,10 +1,10 @@
 // dist/bootstrap.js
-(async function forceBreakthroughBootstrap() {
+(async function forceMultithreadBreakthrough() {
   const BASE_URL = 'https://a728238.github.io/desktop/';
 
-  console.log('[Blink Breakthrough] 🚀 強制ブレイクスルーシークエンスを開始します...');
+  console.log('[Blink Engine] 🚀 マルチスレッド・起動シークエンスを開始します...');
 
-  // 1. Canvas の初期化
+  // 1. DOM / Canvas の用意
   let canvas = document.getElementById('canvas');
   if (!canvas) {
     document.body.style.margin = '0';
@@ -14,54 +14,52 @@
     canvas.id = 'canvas';
     canvas.style.width = '100vw';
     canvas.style.height = '100vh';
+    canvas.style.display = 'block';
     document.body.appendChild(canvas);
   }
 
-  // 2. crossOriginIsolated が成立しているかチェック
+  // 2. crossOriginIsolated 成立済みの判定（完全成功状態）
   if (window.crossOriginIsolated) {
-    console.log('[Blink Breakthrough] ✨ crossOriginIsolated: true - スレッド環境が確立されました');
+    console.log('[Blink Engine] ✨ crossOriginIsolated: true - Pthreads / SharedArrayBuffer が完全有効化されました！');
     launchEmscripten(BASE_URL, canvas);
     return;
   }
 
-  console.warn('[Blink Breakthrough] ⚠️ Service Worker 非対応のコンテキストを検知。CORS/Isolation のバイパス処理を行います...');
-
-  // 3. Service Worker の無理やり登録（Direct Fetch + Blob URL インジェクション）
-  try {
-    const response = await fetch(BASE_URL + 'coi-serviceworker.js');
-    const swCode = await response.text();
-    
-    // Service Worker のソースコードをインメモリ Blob 化
-    const blob = new Blob([swCode], { type: 'text/javascript' });
-    const blobUrl = URL.createObjectURL(blob);
-
-    if (navigator.serviceWorker) {
-      const reg = await navigator.serviceWorker.register(blobUrl, { scope: './' });
-      console.log('[Blink Breakthrough] 💥 Blob URL 経由で Service Worker を強制登録しました:', reg);
-      location.reload();
-      return;
-    }
-  } catch (err) {
-    console.error('[Blink Breakthrough] ❌ Blob SW 登録失敗:', err);
+  // 3. about:blank や Origin: null からの脱出 (Domain Promotion)
+  if (location.origin === 'null' || location.protocol === 'about:') {
+    console.warn('[Blink Engine] ⚡ about:blank (Origin: null) を検知。Service Worker 登録が不可能なため、ホストドメインへ安全にセッションを移行します...');
+    location.href = BASE_URL + 'index.html';
+    return;
   }
 
-  // 4. 最終突破手段: ウィンドウコンテキストを強制的かつシームレスに index.html へ同期書換え
-  console.warn('[Blink Breakthrough] ⚡ ドキュメント全体を Host ページ構造へ強制リライトします...');
-  
-  const hostHtmlResponse = await fetch(BASE_URL + 'index.html');
-  const hostHtmlText = await hostHtmlResponse.text();
-  
-  document.open();
-  document.write(hostHtmlText);
-  document.close();
+  // 4. 正しいドメイン上での Service Worker 強制アクティベート
+  if ('serviceWorker' in navigator) {
+    try {
+      console.log('[Blink Engine] 🔄 Service Worker を登録して Cross-Origin Isolation を有効化します...');
+      const reg = await navigator.serviceWorker.register(BASE_URL + 'coi-serviceworker.js', { scope: './' });
+      
+      // 登録完了後、ヘッダー適用のためリロード
+      if (!navigator.serviceWorker.controller) {
+        console.log('[Blink Engine] 🔄 リクエストヘッダー書き換えのためリロードを実行します...');
+        location.reload();
+        return;
+      }
+    } catch (err) {
+      console.error('[Blink Engine] ❌ Service Worker 登録失敗:', err);
+    }
+  }
 })();
 
 function launchEmscripten(BASE_URL, canvas) {
+  console.log('[Blink Engine] 📦 WebAssembly スレッドモジュールをロード中...');
   window.Module = {
     canvas: canvas,
     locateFile: (path) => BASE_URL + path,
     print: (text) => console.log(`[Stdout] ${text}`),
-    printErr: (text) => console.error(`[Stderr] ${text}`)
+    printErr: (text) => console.error(`[Stderr] ${text}`),
+    onRuntimeInitialized: () => {
+      console.log('[Blink Engine] 🎉 Blink エミュレータ（マルチスレッド）が正常起動しました！');
+    }
   };
 
   const script = document.createElement('script');
