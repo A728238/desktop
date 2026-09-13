@@ -13,11 +13,11 @@
     document.body.style.fontFamily = 'monospace';
     document.body.style.overflow = 'hidden';
 
-    // ドラッグ＆ドロップ用のオーバーレイUI作成
+    // ドラッグ＆ドロップ用 UI の生成
     const dropArea = document.createElement('div');
     dropArea.id = 'drop-area';
-    dropArea.innerHTML = '<h2>🎯 x86_64 ELF バイナリをここにドロップして実行</h2><p>またはクリックしてファイルを選択</p>';
-    dropArea.style.cssText = 'position:fixed; top:20px; left:20px; right:20px; padding:30px; border:2px dashed #007acc; background:rgba(0,0,0,0.8); text-align:center; z-index:9999; cursor:pointer; borderRadius:8px;';
+    dropArea.innerHTML = '<h2>🎯 x86_64 ELF / AppImage バイナリをドロップして実行</h2><p>またはクリックしてファイルを選択</p>';
+    dropArea.style.cssText = 'position:fixed; top:20px; left:20px; right:20px; padding:30px; border:2px dashed #007acc; background:rgba(0,0,0,0.85); text-align:center; z-index:9999; cursor:pointer; border-radius:8px;';
     
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -35,12 +35,12 @@
     canvas.style.display = 'block';
     document.body.appendChild(canvas);
 
-    // イベントリスナー設定
+    // ファイル読み込み処理
     const handleFile = (file) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const bytes = new Uint8Array(e.target.result);
-        dropArea.style.display = 'none'; // UIを隠す
+        dropArea.style.display = 'none';
         console.log(`[Blink File] 📦 '${file.name}' (${bytes.length} bytes) をロードしました`);
         launchEmscripten(BASE_URL, canvas, `/bin/${file.name}`, bytes);
       };
@@ -70,18 +70,42 @@ function launchEmscripten(BASE_URL, canvas, targetProgram, binaryBytes) {
     printErr: (text) => console.error(`[Blink Err] ${text}`),
     preRun: [function() {
       const fs = window.FS || (window.Module && window.Module.FS);
-      if (!fs) return;
+      if (!fs) {
+        console.error('[Blink FS] ❌ FS オブジェクトの初期化に失敗しました');
+        return;
+      }
 
-      try { fs.mkdir('/bin'); } catch(e) {}
+      // ディレクトリ構造の初期化
+      const dirs = ['/bin', '/proc', '/proc/self', '/tmp', '/dev', '/sys'];
+      dirs.forEach(d => {
+        try { fs.mkdir(d); } catch(e) {}
+      });
 
       if (binaryBytes) {
+        // 1. ターゲットバイナリを仮想 FS に配置
         fs.createDataFile('/bin', fileName, binaryBytes, true, true, true);
         try { fs.chmod(targetProgram, 0o755); } catch(e) {}
         console.log(`[Blink FS] ✅ ${targetProgram} を仮想 FS にマウントしました`);
+
+        // 2. AppImage や Linux バイナリが要求する /proc/self/exe のエイリアス作成
+        try {
+          fs.symlink(targetProgram, '/proc/self/exe');
+        } catch(e) {
+          // シンボリックリンク非対応環境フォールバック（実体ファイルのコピー配置）
+          fs.createDataFile('/proc/self', 'exe', binaryBytes, true, true, true);
+          try { fs.chmod('/proc/self/exe', 0o755); } catch(e) {}
+        }
+
+        // 3. 基本的な /proc 環境ファイルのダミー生成
+        try {
+          fs.createDataFile('/proc', 'mounts', 'rootfs / ext4 rw 0 0\n', true, true, true);
+        } catch(e) {}
+
+        console.log('[Blink FS] 🔗 /proc/self/exe のマウント処理が完了しました');
       }
     }],
     onRuntimeInitialized: () => {
-      console.log(`[Blink Engine] 🎉 準備完了。${targetProgram} を起動します...`);
+      console.log(`[Blink Engine] 🎉 実行準備完了。${targetProgram} を起動します...`);
     }
   };
 
