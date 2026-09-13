@@ -18,8 +18,7 @@
     document.body.appendChild(canvas);
   }
 
-  // 2. 実行用パラメータと最小限の x86_64 Linux ELF バイナリ（"Hello World\n" を表示して exit）
-  // Base64 encoded x86_64 ELF binary
+  // 2. 最小限の x86_64 Linux ELF バイナリ
   const sampleElfBase64 = "f0VMRgIBAQAAAAAAAAAAAAIAPgABAAAA4ABAAAAAAABAAAAAAAAAAOAFAAAAAAAAPAAAAAAAAAAYAAAAAAAAAAEAAAAFAAAAAAAAAAAAAAAAAAAAIAAAAAAAMAAAAAAACAAAAAAAAAAAIAAAAAAAAQAAAAAAAAD0AQAADwAAAAD3AAAAeA==";
   
   launchEmscripten(BASE_URL, canvas, '/bin/hello', sampleElfBase64);
@@ -28,34 +27,43 @@
 function launchEmscripten(BASE_URL, canvas, targetProgram, base64Binary) {
   window.Module = {
     canvas: canvas,
-    arguments: [targetProgram], // /bin/hello を指定
+    arguments: [targetProgram],
     locateFile: (path) => BASE_URL + path,
     print: (text) => console.log(`[Blink Output] ${text}`),
     printErr: (text) => console.error(`[Blink Err] ${text}`),
-    preRun: [function(m) {
+    preRun: [function() {
       console.log('[Blink FS] 仮想ファイルシステムを構築中...');
       
+      // グローバルな FS オブジェクトを参照
+      const fs = window.FS || (window.Module && window.Module.FS);
+
+      if (!fs) {
+        console.error('[Blink FS] ❌ FS オブジェクトが見つかりません');
+        return;
+      }
+      
       try {
-        // /bin ディレクトリ作成
-        m.FS.mkdir('/bin');
+        fs.mkdir('/bin');
       } catch(e) {}
 
       if (base64Binary) {
-        // Base64 を Uint8Array に変換
         const binaryString = atob(base64Binary);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
           bytes[i] = binaryString.charCodeAt(i);
         }
 
-        // 仮想 FS 上に /bin/hello を作成し、実行権限(0755)を付与
-        m.FS.createDataFile('/bin', 'hello', bytes, true, true, true);
-        m.FS.chmod('/bin/hello', 0o755);
-        console.log('[Blink FS] /bin/hello バイナリの作成完了！');
+        // 仮想 FS 上に /bin/hello を作成 (1: read, 1: write, 1: execute)
+        fs.createDataFile('/bin', 'hello', bytes, true, true, true);
+        try {
+          fs.chmod('/bin/hello', 0o755);
+        } catch(e) {}
+        
+        console.log('[Blink FS] ✅ /bin/hello バイナリの配置を完了しました！');
       }
     }],
     onRuntimeInitialized: () => {
-      console.log('[Blink Engine] 🎉 実行準備が完了しました。Blink 上でバイナリを起動します...');
+      console.log('[Blink Engine] 🎉 実行準備完了。Blink エミュレータを起動します...');
     }
   };
 
